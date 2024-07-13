@@ -1,0 +1,49 @@
+/* start css for enter order ID*/
+.easyship-pretrack-body {
+    font-family: -apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size: 24px !important;
+    color:#2e384d;
+	position: relative;
+    background: #FFFFFF;
+    margin:50px auto;
+    padding: 30px 10px;
+    width: 30%;
+    min-width: 200px;
+    text-align: center;
+	border-radius : 10px;
+	border: 1px solid #EDEDED;
+}
+.easyship-order-btn{
+	background-color :#046bd2;
+	color: #fff;
+    font-family: Roboto,Helvetica,Arial,sans-serif;
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 3;
+    padding: 0 1.6875rem;
+    border: 2px solid #034a8a; /* Set border and color */
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+}
+.easyship-form-input {
+    color: #333;
+    font-size: 1rem;
+    margin: 0 auto;
+    padding: 1rem 0.5rem;
+    width: 80%;
+    margin-bottom: 25px;
+}
+.esyship-icon{
+    font-size: xx-large !important;
+}
+
+/* Responsive layout */
+@media (max-width: 800px) {
+
+	.easyship-pretrack-body {
+        width: 95%;
+    }
+}
+/* Respondive end */
+/* End css for enter order ID*/

@@ -1,0 +1,289 @@
+/* start shipment tracking css */
+.easyship-tracking-page {
+	margin: auto 0;
+}
+.es-tracking-container{
+    display: flex;
+    flex-wrap: wrap;
+    margin: 0 10%;
+    font-family: "Roboto",sans-serif; 
+    font-size: 14px;
+    color: #201616;
+}
+.es-error {
+    background-color: #f8d7da; /* Light red background */
+    padding: 5px 15px;            /* Padding */
+    border-radius: 10px;      /* Rounded corners */
+    color: #721c24;           /* Text color */
+    border: 1px solid #f5c6cb;/* Border to match the background */
+}
+
+.es-tracking-container p{
+	margin-bottom: 1px;
+}
+.es-order-details,
+.es-track-details,
+.es-track-progress,
+.es-error-section{
+    background-color: #fff;
+    border-radius: 10px;
+    margin: 10px;
+	border: 1px solid #EDEDED;
+}
+.es-header{
+    border-bottom: solid 2px;
+    border-color: #f5f5f5;
+    padding: 0px 25px;
+    font-size: 16px;
+    height: 50px;
+}
+.es-article{
+    padding: 15px 17px;
+}
+.es-order-details{
+    flex: 50%;
+    height: fit-content;
+}
+.es-track-prog{
+    flex: 45%;
+}
+.es-bold{
+   color: #4F4F4F;
+   font-weight: 700!important;
+}
+.es-small{
+font-size: 13px;
+color: #6d6b6b !important;
+}
+.es-big{
+    font-size: 16px;
+}
+.header-icon{
+    font-size: 20PX;
+    padding-right: 10px;
+}
+.es-anchor{
+    text-decoration: none!important;
+    color: #2271b1;
+}
+/* Order Detail container */
+.es-view-order{
+    float: right;
+	font-size: 14px;
+}
+.eashyship-table{
+    width: 100%;
+    border-collapse: collapse;
+	margin-top:10px;
+}
+.eashyship-table tr{
+    border-top: 1px dotted #ccc;
+}
+.eashyship-table tr:hover td:not(th) {
+    background-color: rgba(210,221,236,.1);
+}
+.eashyship-table th {
+    font-weight: bold;
+}
+.eashyship-table td, .eashyship-table th {
+  padding: 5px;
+  text-align: left;
+}
+table, td, th {
+    border: 0!important;
+}
+.es-od-footer{
+    border-top: solid 2px;
+    border-color: #f5f5f5;
+    padding: 10px 25px;
+    position: relative;
+    bottom: 0;
+}
+.easyship-submit-btn{
+    background-color: #FF5722;
+    border: 0;
+    border-radius: 2px;
+    color: #FFFFFF;
+    cursor: pointer;
+    display: inline-block;
+    font-family: -apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 2.3;
+    padding: 0 1rem;
+    text-align: center;
+    text-decoration: none;
+    transition: box-shadow .2s ease-in-out;
+}
+.easyship-submit-btn:hover {
+	background-color: #FF5722!important;
+    opacity: 90%;
+}
+.es-img{
+	width: 50px!important;
+    height: auto;
+}
+/* Order Detail container end*/
+
+/* Shipment Status start*/
+.es-td-article p{
+		margin-bottom: 0;
+}
+.es-track {
+    position: relative;
+    background-color: #ddd;
+    height: 6px;
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    margin-bottom: 70px;
+    margin-top: 40px;
+    font-size: 16px;
+}
+
+.es-track .es-step {
+    -webkit-box-flex: 1;
+    -ms-flex-positive: 1;
+    flex-grow: 1;
+    width: 25%;
+    margin-top: -13px;
+    text-align: center;
+    position: relative
+}
+
+.es-track .es-step.active:before {
+    background: #FF5722
+}
+
+.es-track .es-step::before {
+    height: 6px;
+    position: absolute;
+    content: "";
+    width: 100%;
+    left: 0;
+    top: 13px
+}
+
+.es-track .es-step.active .es-icon {
+    background: #ee5435;
+    color: #fff
+}
+
+.es-track .es-icon {
+    display: inline-block;
+    width: 30px;
+    height: 30px;
+    line-height: 32px;
+    position: relative;
+    border-radius: 100%;
+    background: #ddd;
+}
+.es-track .es-step.active .es-text {
+    font-weight: 400;
+    color: #000;
+}
+.es-track .es-text {
+    display: block;
+    margin-top: 6px;
+	font-size: 14px;
+}
+.es-icon{
+    font-size: 14px;
+}
+/* Shipment Status end*/
+
+/* Shipment Progress start*/
+.es-track-progress{
+	margin-top: 20px;
+}
+.es-shipment-progress {
+    max-height: 350px;
+    overflow-y: scroll;
+    padding: 20px 10px 20px 25px; /* T R B L*/
+}
+.es-track-progress {
+    position: relative;
+}
+
+.progress-bar {
+    list-style-type: none;
+    margin: 0;
+    padding: 0;
+    position: relative;
+}
+
+.progress-bar::before {
+    content: '';
+    position: absolute;
+    left: 10px; /* Adjust based on your needs */
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background-color: #28a745;
+}
+.progress-bar li p{
+    margin: 0px 0px; /* Adjust padding for better alignment */
+}
+.progress-bar li {
+    position: relative;
+    padding: 5px 5px 5px 40px; /* Adjust padding for better alignment */
+    margin-bottom: 15px;
+}
+
+.progress-bar li .circle {
+    position: absolute;
+    left: 6px; /* Align with the vertical line */
+    top: 50%;
+    transform: translateY(-50%);
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: #28a745; /* Green color, change as needed */
+}
+.es-tracking-footer-logo{
+    border-top: solid 2px;
+    border-color: #f5f5f5;
+    position: relative;
+    bottom: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 51px; /* Adjust the height as needed */
+    /* background-color: #f8f9fa;*/ /* Optional: Add background color */
+}
+
+.es-footer-logo-div {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.es-footer-logo-div p {
+    margin: 0;
+    padding-right: 10px; /* Adjust spacing between text and logo */
+}
+
+.eashyship-logo-footer {
+    height: 40px; /* Adjust the height of the logo as needed */
+}
+
+/* Shipment Progress start*/
+
+/* Responsive layout */
+@media (max-width: 800px) {
+
+	.es-tracking-container {
+        margin: 0;
+		margin-bottom: 50px;
+    }
+	.es-order-details, .es-track-prog {
+      flex: 100%;
+    }
+    .es-track{
+        font-size: 13px;
+    }
+}
+/* Respondive end */
+/* End shipment tracking css */
+
+

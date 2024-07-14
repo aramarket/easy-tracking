@@ -34,6 +34,14 @@ if (!defined('EASYSHIP_MAIN_URL')) {
     define('EASYSHIP_MAIN_URL', 'easyship-main'); //return easyship-main
 }
 
+//define variable for awb and courier name in order meta
+if (!defined('ES_AWB_META')) {
+    define('ES_AWB_META', 'es_awb_no'); //return easyship-main
+}
+if (!defined('ES_COURIER_NAME_META')) {
+    define('ES_COURIER_NAME_META', 'es_courier_name'); //return easyship-main
+}
+
 //Caurier API
 require_once EASYSHIP_DIR . 'settings/settings.php';
 require_once EASYSHIP_DIR . 'caurier-api/model/tracking-model.php';

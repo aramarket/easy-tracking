@@ -54,8 +54,11 @@ if (!class_exists('ESOrderTracking')) {
 			//common
 			$order = wc_get_order($order_ID);
 
-			$es_awb_no = $order->get_meta('es_awb_no');
-			$es_courier_name = $order->get_meta('es_courier_name');
+			// Usage
+			$shipping_details = $this->get_shipping_details($order_ID);
+			$es_awb_no = $shipping_details['es_awb_no'];
+			$es_courier_name = $shipping_details['es_courier_name'];
+			
 			
 			$error;
 			$easyshipLogo = EASYSHIP_URL . 'tracking/assets/img/easyship.png';
@@ -66,32 +69,26 @@ if (!class_exists('ESOrderTracking')) {
 			$order_date_raw = $order->get_date_created();
 			$order_date = $order_date_raw->date_i18n('d, F Y');
 
-			if ($es_courier_name == 'delhivery') {
+			if (($es_courier_name == 'delhivery') || ($es_courier_name == 'DL')) {
 				$response = $this->delhiveryAPI->getTrackingData($es_awb_no);
 				if(!$response['success']){
 					$error = $response['message'];
 				}
-			} elseif ($es_courier_name == 'shiprocket') {
+			} elseif (($es_courier_name == 'shiprocket') || ($es_courier_name == 'SR')) {
 				$response = $this->shipRocketAPI->getTrackingData($es_awb_no);
 				if(!$response['success']){
 					$error = $response['message'];
 				}
-			} elseif ($es_courier_name == 'nimbuspost') {
+			} elseif (($es_courier_name == 'nimbuspost') || ($es_courier_name == 'NB')) {
 				$response = $this->nimbusPostAPI->getTrackingData($es_awb_no);
 				if(!$response['success']){
 					$error = $response['message'];
 				}
-			} elseif ($es_awb_no && $es_courier_name) {
+			} elseif (!empty($es_awb_no) && !empty($es_courier_name)) {
 				$response = array(
 					'success' => false,
 					'message' => 'No Caurier Match but awb present',
-					'result'  => new TrackingModel('NA', 'Shipped', $es_courier_name, 'NA', $es_awb_no, '#', [])
-				);
-			} else {
-				$response = array(
-					'success' => false,
-					'message' => 'No Caurier Match',
-					'result'  => new TrackingModel('NA', 'Not Shipped', 'NA', 'NA', 'NA', '#', [])
+					'result'  => new TrackingModel('NA', 'In Transit', $es_courier_name, 'NA', $es_awb_no, '#', [])
 				);
 			}
 
@@ -99,8 +96,9 @@ if (!class_exists('ESOrderTracking')) {
 			if(isset($response['result'])) {
 				$trackingData = $response['result'];
 			} else {
-				$trackingData = new TrackingModel('NA', 'NA', 'NA', 'NA', 'NA', '#', []);
+				$trackingData = new TrackingModel('NA', 'Not Shipped', 'NA', 'NA', 'NA', '#', []);
 			}
+			
 			$expectedDeliveryDate 	= $trackingData->expectedDeliveryDate ?? 'NA';
 			$shipmentStatus 		= $trackingData->shipmentStatus ?? 'NA';
 			$shipThrough 			= $trackingData->shipThrough ?? 'NA';
@@ -131,6 +129,33 @@ if (!class_exists('ESOrderTracking')) {
 			else if(in_array($status, $delivered))		{ return 4; } //for order Delivered
 			else if(in_array($status, $return))			{ return 5; } //for order Return
 			else 										{ return 1; } //for order Booked
+		}
+		
+		private function read_db_data($order_ID, $value){
+			global $wpdb;
+			$table_name = $wpdb->prefix . 'easyship_db';
+			$result = $wpdb->get_var( $wpdb->prepare( "SELECT $value FROM $table_name WHERE order_number = %d", $order_ID ) );
+			// Check if a Value was found
+			if ( !$result ) {
+				return '';
+			} else {
+				return $result;
+			}
+		}
+		
+		private function get_shipping_details($order_ID) {
+			$es_awb_no = $this->read_db_data($order_ID, 'awb_number');
+			$es_courier_name = $this->read_db_data($order_ID, 'shipped_through');
+
+			// If the values are not found in the database, try to get them from the order metadata
+			if (empty($es_awb_no) || empty($es_courier_name)) {
+				$es_awb_no = get_post_meta( $order_ID, ES_AWB_META, true );
+				$es_courier_name = get_post_meta( $order_ID, ES_COURIER_NAME_META, true );
+			}
+			return [
+				'es_awb_no' => $es_awb_no,
+				'es_courier_name' => $es_courier_name
+			];
 		}
 	}
 }

@@ -36,6 +36,11 @@
     padding: 0px 25px;
     font-size: 16px;
     height: 50px;
+	
+	display: flex;
+    align-items: center;
+	justify-content: space-between; /* Distributes space between items */
+
 }
 .es-article{
     padding: 15px 17px;
@@ -68,7 +73,6 @@ color: #6d6b6b !important;
 }
 /* Order Detail container */
 .es-view-order{
-    float: right;
 	font-size: 14px;
 }
 .eashyship-table{
@@ -248,7 +252,7 @@ table, td, th {
     display: flex;
     justify-content: center;
     align-items: center;
-    height: 51px; /* Adjust the height as needed */
+    height: 50px; /* Adjust the height as needed */
     /* background-color: #f8f9fa;*/ /* Optional: Add background color */
 }
 
@@ -265,6 +269,7 @@ table, td, th {
 
 .eashyship-logo-footer {
     height: 40px; /* Adjust the height of the logo as needed */
+	width: 130px;
 }
 
 /* Shipment Progress start*/

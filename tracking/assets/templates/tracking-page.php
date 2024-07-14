@@ -11,8 +11,8 @@
         <!-- Order Details -->
         <section class="es-order-details">
             <header class="es-header es-od-header">
-                <p class="es-view-order">Order #<?php echo $order_ID ?></p>
                 <p class="es-bold"><span class="header-icon"><i class="fa-solid fa-boxes-stacked"></i></span> Order Details</p>
+				<p class="es-view-order">Order #<?php echo $order_ID ?></p>
             </header>
             <article class="es-article es-od-article">
                 <p> Place On <span class="es-bold"><?php echo $order_date ?></span></p>

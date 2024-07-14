@@ -22,7 +22,7 @@ if (!class_exists('EasyShipSetting')) {
         public function register_settings() {
             // General settings
             register_setting('easyship-settings-group', 'purchase_token');
-            register_setting('easyship-settings-group', 'selected_page');
+            register_setting('easyship-settings-group', 'selected_tracking_page');
             register_setting('easyship-settings-group', 'before_ship_status');
             register_setting('easyship-settings-group', 'after_ship_status');
             register_setting('easyship-settings-group', 'es_map_prepaid_orders');
@@ -60,12 +60,12 @@ if (!class_exists('EasyShipSetting')) {
                         <tr valign="top">
                             <th scope="row">Select a Tracking Page</th>
                             <td>
-                                <select name="selected_page" id="myplugin_page">
+                                <select name="selected_tracking_page" id="myplugin_page">
                                     <option value="">-- Select a page --</option>
                                     <?php
                                     $pages = get_pages();
                                     foreach ($pages as $page) {
-                                        $option = '<option value="' . $page->ID . '"' . selected(get_option('selected_page'), $page->ID, false) . '>';
+                                        $option = '<option value="' . $page->ID . '"' . selected(get_option('selected_tracking_page'), $page->ID, false) . '>';
                                         $option .= $page->post_title;
                                         $option .= '</option>';
                                         echo $option;

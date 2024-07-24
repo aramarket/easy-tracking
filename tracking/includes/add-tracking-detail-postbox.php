@@ -23,13 +23,19 @@ if ( ! class_exists( 'AddTrackingDetailPostbox' ) ) {
             );
         }
 
-		public function tracking_box_content($order) {
+		public function tracking_box_content($post) {
+			$order_id = $post->ID;
 
-			$order_ID = $order->ID;
-			$es_awb_no = get_post_meta( $order_ID, ES_AWB_META, true );
-			$es_courier_name = get_post_meta( $order_ID, ES_COURIER_NAME_META, true );
-			
-			$courier_list = array('Select Courier Company', 'Shiprocket', 'Delhivery', 'NimbusPost');
+			$es_awb_no;
+			$es_courier_name;
+			$get_tracking_details = ESCommonFunctions::get_tracking_details($order_id);
+			if($get_tracking_details['success']){
+				$tracking_details = $get_tracking_details['result'];
+				$es_awb_no = $tracking_details['es_awb_no'];
+				$es_courier_name = $tracking_details['es_courier_name'];
+			}
+
+			$courier_list = array('shiprocket', 'delhivery', 'nimbuspost', 'dtdc', 'anjani', 'trackon');
 
 			// Output HTML for custom postbox
 			?>
@@ -74,7 +80,7 @@ if ( ! class_exists( 'AddTrackingDetailPostbox' ) ) {
 				if (isset($_POST['awb_number']) && isset($_POST['courier_name'])) {
 					$awb = sanitize_text_field($_POST['awb_number']);
 					$courier = sanitize_text_field($_POST['courier_name']);
-					$this->save_tracking_details_in_meta($order_ID, $awb, $courier);
+					ESCommonFunctions::save_tracking_details_in_meta($order_ID, $awb, $courier);
 				} else {
 					// Assuming you have detected an error and need to display a message
 					$error_msg = 'There was an error updating the order. Please try again.';
@@ -84,20 +90,6 @@ if ( ! class_exists( 'AddTrackingDetailPostbox' ) ) {
 			}
 		}
 		
-		public function save_tracking_details_in_meta($order_ID, $awb, $courier) {
-			$order = wc_get_order($order_ID);
-			update_post_meta($order_ID, ES_AWB_META , $awb);
-			update_post_meta($order_ID, ES_COURIER_NAME_META, $courier);
-			$get_page_id = esc_attr(get_option('selected_tracking_page'));
-			if($get_page_id){
-				$tracking_page_url = get_permalink($get_page_id);
-				$tracking_link = $tracking_page_url. '?order-id=' .$order_ID;
-				$order->add_order_note('Tracking Link - <a target="_blank" href="' . $tracking_link . '">' . $tracking_link . '</a>', true);
-			}else{
-				$order->add_order_note('Please select tracking page - <a target="_blank" href="admin.php?page=' . EASYSHIP_MAIN_URL . '">' . 'click here' . '</a>'); 
-
-			} 
-		}
     }
 }
 

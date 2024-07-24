@@ -12,11 +12,13 @@ if (!class_exists('NimbuspostAPI')) {
 		private $genrateTokenApi;
 		private $transient_name = 'es_nimbuspost_token';
 		private $api_base_url = 'https://api.nimbuspost.com/v1/';
+		private $bookShipmentApiUrl;
 	
 		public function __construct() {
 			$this->trackingUrl = 'https://ship.nimbuspost.com/shipping/tracking/';
 			$this->trackingApi = $this->api_base_url . 'shipments/track/';
 			$this->genrateTokenApi = $this->api_base_url . 'users/login';
+			$this->bookShipmentApiUrl = $this->api_base_url . 'shipments';
 		}
 	
 		private function generateToken() {
@@ -120,13 +122,14 @@ if (!class_exists('NimbuspostAPI')) {
 		}
 	
 		private function postRequest($url, $body) {
-			$token = $this->generateToken();
-			if (strpos($token, 'Error') !== false) {
-				return array(
-					'success' => false,
-					'message' => 'Error token: ' . $token,
-				);
-			}
+			$tokenResponse = $this->generateToken();
+            if(!$tokenResponse['success']){
+                return array(
+                    'success' => false,
+                    'token' => $tokenResponse['message'],
+                );
+            }
+            $token = $tokenResponse['token'];
 	
 			$header_data = array(
 				'Content-Type' => 'application/json',
@@ -197,8 +200,8 @@ if (!class_exists('NimbuspostAPI')) {
             foreach ($shipmentProgress as $scan) {
                 $trackingModel->addShipmentProgress(
                     $scan['event_time'],
-                    $scan['status_code'],
-                    $scan['status_code'],
+                    $this->nimbuspost_map_status($scan['status_code']),
+                    $scan['message'],
                     $scan['location']
                 );
             }
@@ -206,136 +209,191 @@ if (!class_exists('NimbuspostAPI')) {
             return $trackingModel;
         }
 
-		public function get_rate($order_ID, $order_weight) {
+		private function nimbuspost_map_status($input) {
+			switch ($input) {
+				case 'PP':
+					return 'Pending Pickup';
+				case 'IT':
+					return 'In Transit';
+				case 'EX':
+					return 'Exception';
+				case 'OFD':
+					return 'Out For Delivery';
+				case 'DL':
+					return 'Delivered';
+				case 'RT':
+					return 'RTO';
+				case 'RT-IT':
+					return 'RTO In Transit';
+				case 'RT-DL':
+					return 'RTO Delivered';
+				default:
+					return $input;
+			}
+		}
+		
+		public function getShippingRate($order_ID, $order_weight) {
 			$order = wc_get_order($order_ID);
-			$payment_mode = es_check_payment_mode($order->get_payment_method_title(), 'NP');
-			$product_dimensions = es_get_product_dimensions($order_ID);
-	
+			$paymentMode = ESShippingFunction::check_payment_mode($order->get_payment_method_title());
+			// 			$product_dimensions = es_get_product_dimensions($order_ID);
+
 			$url = $this->api_base_url . 'courier/serviceability';
-	
+			
 			$body = json_encode(array(
 				"origin"        => get_option('nimbusPost_pincode'),
 				"destination"   => $order->get_billing_postcode(),
-				"payment_type"  => $payment_mode,
+				"payment_type"  => $paymentMode,
 				"order_amount"  => $order->get_total(),
 				"weight"        => $order_weight,
-				"length"        => $product_dimensions['length'],
-				"breadth"       => $product_dimensions['width'],
-				"height"        => $product_dimensions['height'],
+				"length"        => '10',
+				"breadth"       => '10',
+				"height"        => '10',
 			));
-			$response = $this->post_request($url, $body);
-			$response_decode = json_decode($response, true);
-			if (!($response_decode['status'])) {
-				return 'Error : ' . $response;
+			$response = $this->postRequest($url, $body);
+			
+			if(!$response['success']){
+				// Prepare the response array
+				$error = array(
+					'success' => false,  // Assuming the request was successful
+					'message' => $response['message'],
+				);
+				return $error;
+			} else {
+				$list_of_couriers = $response['result']['data'];
+				$results = [];
+
+				foreach ($list_of_couriers as $courier) {
+					$results[] = [
+						'courier_id' => $courier['id'],
+						'courier_name' => $courier['name'],
+						'courier_price' => $courier['total_charges']
+					];
+				}
 			}
-			return $response;
+			return [
+				'success' => true, 
+				'message' => 'Shipping rate fetched successfully',
+				'result' => $results
+			];
 		}
 	
-		public function manifest($awbs) {
-			$url = $this->api_base_url . 'shipments/manifest';
-	
-			$body = json_encode(array(
-				"awbs" => $awbs
-			));
-			$response = $this->post_request($url, $body);
-			$response_decode = json_decode($response, true);
-			if (!($response_decode['status'])) {
-				return 'Error : ' . $response;
-			}
-			return $response;
-		}
-	
-		public function get_items($order_ID) {
-			$order = wc_get_order($order_ID);
+		// Shipping code start here
+		public function prepareOrderItemsData($orderID) {
+			$order = wc_get_order($orderID);
 			$items = $order->get_items();
-			$order_items = array();
+			$orderItems = array();
 			foreach ($items as $item) {
 				$product = $item->get_product();
 				$product_name = $item->get_name();
 				$product_quantity = $item->get_quantity();
 				$product_total = $item->get_total();
-				$product_weight = $product->get_weight() * $item->get_quantity();
+// 				$product_weight = $product->get_weight() * $item->get_quantity();
 				$product_sku = $product->get_sku();
-				$order_item = array(
+				$orderItem = array(
 					'name'    => $product_name,
 					'qty'     => $product_quantity,
 					'price'   => $product_total / $product_quantity,
 					'sku'     => $product_sku,
-					'weight'  => $product_weight,
+					'weight'  => 500, //$product_weight
 				);
-				$order_items[] = $order_item;
+				$orderItems[] = $orderItem;
 			}
-			return json_encode($order_items);
+			return $orderItems;
 		}
-	
-		public function insert_data_db($order_ID, $response) {
-			$order = wc_get_order($order_ID);
-			$order_weight = es_order_weight($order_ID);
-	
-			$awb_data = new ES_db_data_format();
-			$awb_data->order_number = $order_ID;
-			$awb_data->order_price = $order->get_total();
-			$awb_data->order_weight = $order_weight;
-			$awb_data->courier = $response->data->courier_name;
-			$awb_data->courier_id = $response->data->courier_id;
-			$awb_data->awb = $response->data->awb_number;
-			$awb_data->tp_company = 'NB';
-			$awb_data->label = $response->data->label;
-	
-			return es_insert_order_data_db($awb_data);
+		
+		public function prepareShipmentData($orderID, $courierID){
+			$order = wc_get_order( $orderID );
+			$orderDate = date('Y-m-d H:i', strtotime($order->get_date_created()));
+
+			$paymentMode = ESShippingFunction::check_payment_mode($order->get_payment_method_title());
+// 			if ($getPaymentMode == 'prepaid') {
+// 				$paymentMode = 'prepaid';
+// 			} else {
+// 				$paymentMode = 'cod';
+// 			}
+
+			$orderWeight = ESShippingFunction::get_order_weight($orderID); //weight should be in grams;
+			$weight = $orderWeight['result']; //weight should be in kgs;
+
+			$productDimensions = ESShippingFunction::get_product_dimensions($orderID); //dimentions should be in cm;
+
+			$phoneResponce = ESCommonFunctions::extractPhoneNumber($order->get_billing_phone());
+			if($phoneResponce['success']) {
+				$phone = $phoneResponce['result'];
+			} else{
+				$phone = 0000000000;
+			}
+
+			$itemData = $this->prepareOrderItemsData($orderID);
+
+			$orderData = array(
+							"order_number" 			=> $orderID,
+							"shipping_charges" 		=> $order->get_shipping_total(),
+							"discount" 				=> $order->get_discount_total(),
+							"cod_charges" 			=> 0,
+							"payment_type" 			=> $paymentMode,
+							"order_amount" 			=> $order->get_total(),
+							"package_weight" 		=> $weight,   
+							"package_length"  		=> $productDimensions['length'],
+							"package_breadth" 		=> $productDimensions['width'],
+							"package_height"  		=> $productDimensions['height'],
+							"request_auto_pickup" 	=> "yes", // no for not auto request
+							"courier_id" 			=> $courierID,
+							"consignee" 			=> array(
+								"name" 		=> $order->get_billing_first_name().' '.$order->get_billing_last_name(),
+								"address" 	=> $order->get_billing_address_1(),
+								"address_2" => $order->get_billing_address_2(),
+								"city" 		=> $order->get_billing_city(),
+								"state" 	=> $order->get_billing_state(),
+								"pincode" 	=> $order->get_billing_postcode(),
+								"phone" 	=> $phone,
+							),
+							"pickup" => array(
+								"warehouse_name" => get_option( 'nimbusPost_warehouse_name' ),
+								"name" 			 => get_option( 'nimbusPost_name' ),
+								"address"		 => get_option( 'nimbusPost_address' ),
+								"address_2"		 => get_option( 'nimbusPost_address_2' ),
+								"city"			 => get_option( 'nimbusPost_city' ),
+								"state"			 => get_option( 'nimbusPost_state' ),
+								"pincode"		 => get_option( 'nimbusPost_pincode' ),
+								"phone"			 => get_option( 'nimbusPost_phone' ),
+								"gst_umber"      => get_option( 'nimbusPost_gst_umber' ),
+							),							
+							"order_items" 			=> $itemData,
+						);
+			return json_encode($orderData, true);
 		}
-	
-		public function show_single_rate_popup($order_ID) {
-			$shipping_response = $this->get_rate($order_ID, es_order_weight($order_ID));
-			$shipping_rate = json_decode($shipping_response, true);
-			?>
-			<div class="eashyship-popup-body">
-				<header class="eashyship-popup-header">
-					<a href="https://easy-ship.in/" target="_blank"><img class="eashyship-logo" src="<?php echo EASYSHIP_DIR . '/assets/img/easyship.png' ?>" alt="easyship"></a>
-					<button class="eashyship-close-js eashyship-close-btn"><span class="eashyship-close-icon">&times;</span></button>
-				</header>
-				<article class="eashyship-popup-article">
-					<a href="https://ship.nimbuspost.com/dash" target="_blank"> <p class="eashyship-wallet">NimbusPost Recharge</p></a>
-					<?php echo es_product_table($order_ID); ?><br>
-					<div class="eashyship-shipping-price">
-						<table class="eashyship-table eashyship-shipping-table">
-							<tr>
-								<th>ID</th>
-								<th>Courier Name</th>
-								<th>Forward</th>
-								<th>COD</th>
-								<th>Total</th>
-							</tr>
-							<form id="es_create_single_shipment">
-								<?php 
-								if (strpos($shipping_response, 'Error') !== false) { 
-									exit($shipping_response);
-								}
-								usort($shipping_rate['data'], function($a, $b) {
-									return $a['total_charges'] - $b['total_charges'];
-								});
-								foreach ($shipping_rate['data'] as $carrier) : ?>
-									<tr>
-										<td><input type="radio" id="shipping_id" name="shipping_id" value="'<?php echo $carrier['id'] ?>'"></td>
-										<td><?php echo $carrier['name']; ?></td>
-										<td><?php echo '₹' . $carrier['freight_charges']; ?></td>
-										<td><?php echo '₹' . $carrier['cod_charges']; ?></td>
-										<td><?php echo '₹' . $carrier['total_charges']; ?></td>
-									</tr>
-								<?php endforeach; ?>
-								<input type="hidden" id="OrderId" name="OrderId" value="'<?php echo $order_ID ?>'">
-								<input type="hidden" id="ship_by" name="ship_by" value="NP">
-							</form>        
-						</table>
-					</div>
-				</article>
-				<footer class="eashyship-popup-footer">
-					<div class="eashyship-btn-group">
-						<button id="easyship-create-shipment" type="submit" class="easyship-btn easyship-popup-create-shipment"><?php echo __('Create Shipment') ?></button>
-					</div>
-				</footer>
-			</div>
-			<?php
+		
+		public function createShipments($orderID, $courierID){
+			$url = $this->bookShipmentApiUrl;
+            $shipmentData = $this->prepareShipmentData($orderID, $courierID);
+			$response = $this->postRequest($url, $shipmentData);
+			if(!$response['success']){
+				// Prepare the response array
+				return array(
+					'success' => false,
+					'message' => $response['message'],
+				);
+			}
+			$result = $response['result'];
+            return $this->handleCreatedShipmentResponse($orderID, $result);
+		}
+
+		public function handleCreatedShipmentResponse($orderID, $response){
+			if(!$response['status']){
+				return array(
+					'success' => false,
+					'message' => $response['message'],
+				);
+			}
+			$awb = $response['data']['awb_number'];
+			
+			ESCommonFunctions::save_tracking_details_in_meta($orderID, $awb, 'nimbuspost');
+			$result = [
+				'success' => true,
+				'message' => 'Order shipped successfully',
+			];
+			return $result;
 		}
 	}
 }
@@ -364,7 +422,7 @@ if (!class_exists('NimbuspostSettings')) {
         }
 
         public function register_menu_page() {
-			add_submenu_page(EASYSHIP_MAIN_URL, 'NimbusPost settings', 'NimbusPost API', 'manage_options', 'easyship-nimbuspost', [$this, 'nimbuspost_settings_page']);
+			add_submenu_page(EASYSHIP_MENU_SLUG, 'NimbusPost settings', 'NimbusPost API', 'manage_options', 'easyship-nimbuspost', [$this, 'nimbuspost_settings_page']);
         }
 
         public function nimbuspost_settings_page() {

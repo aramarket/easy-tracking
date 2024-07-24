@@ -5,12 +5,23 @@ if (!defined('ABSPATH')) {
 if (!class_exists('ShiprocketAPI')) {
     class ShiprocketAPI {
         private $token;
-        private $trackingApi;
-        private $genrateTokenApi;
-
+		private $genrateTokenApiUrl;
+        private $trackingApiUrl;
+		private $getRateApiUrl;
+		private $walletBalanceApiUrl;
+		private $bookShipmentApiUrl;
+		private $generateAWBApiUrl;
+		private $generateLabelApiUrl;
+		
         public function __construct() {
-            $this->trackingApi = 'https://apiv2.shiprocket.in/v1/external/courier/track/awb/';
-            $this->genrateTokenApi = 'https://apiv2.shiprocket.in/v1/external/auth/login';
+			$this->genrateTokenApiUrl = 'https://apiv2.shiprocket.in/v1/external/auth/login';
+            $this->trackingApiUrl = 'https://apiv2.shiprocket.in/v1/external/courier/track/awb/';
+			$this->getRateApiUrl = 'https://apiv2.shiprocket.in/v1/external/courier/serviceability/?';
+			$this->bookShipmentApiUrl = 'https://apiv2.shiprocket.in/v1/external/orders/create/adhoc';
+			$this->walletBalanceApiUrl = 'https://apiv2.shiprocket.in/v1/external/account/details/wallet-balance';
+			$this->generateAWBApiUrl = 'https://apiv2.shiprocket.in/v1/external/courier/assign/awb';
+			$this->generateLabelApiUrl = 'https://apiv2.shiprocket.in/v1/external/courier/generate/label';
+
         }
 
         private function generateToken() {
@@ -18,7 +29,7 @@ if (!class_exists('ShiprocketAPI')) {
             $token = get_transient($transient_name);
         
             if (false === $token) {
-                $url = $this->genrateTokenApi;
+                $url = $this->genrateTokenApiUrl;
                 $username = get_option('shiprocket_username');
                 $password = get_option('shiprocket_password');
         
@@ -156,7 +167,7 @@ if (!class_exists('ShiprocketAPI')) {
         }
 
         public function getTrackingData($awb) {
-            $url = $this->trackingApi . $awb;
+            $url = $this->trackingApiUrl . $awb;
             $result = $this->getRequest($url);
             if (!$result['success']) {
                 return array(
@@ -203,117 +214,286 @@ if (!class_exists('ShiprocketAPI')) {
 
             return $trackingModel;
         }
+		
+		// Start show popup bulk rate 
+        public function getShippingRate($order_ID, $orderWeight) {
 
-        public function getShippingRate($orderID, $orderWeight) {
-            $order = wc_get_order($orderID);
-            $pickupPostcode = WC()->countries->get_base_postcode();
-            $deliveryPostcode = $order->get_billing_postcode();
-            $paymentMode = intval($this->checkPaymentMode($order->get_payment_method_title(), 'SR1'));
+			$order = wc_get_order($order_ID);
+			$getPaymentMode = ESShippingFunction::check_payment_mode($order->get_payment_method_title());
+
+			if ($getPaymentMode == 'prepaid') {
+				$paymentMode = 1; // 1 for prepaid
+			} else {
+				$paymentMode = 0; // 0 for cod
+			}
+
+			$pickupPostcode = WC()->countries->get_base_postcode();
+			$deliveryPostcode = $order->get_billing_postcode();
+			$codValue = $order->get_total();
+			
             $weight = $orderWeight / 1000;
             $codValue = $order->get_total();
-            $url = 'https://apiv2.shiprocket.in/v1/external/courier/serviceability/?pickup_postcode=' . $pickupPostcode . '&delivery_postcode=' . $deliveryPostcode . '&cod=' . $paymentMode . '&weight=' . $weight . '&declared_value=' . $codValue;
+			
+            $url = $this->getRateApiUrl . 'pickup_postcode=' . $pickupPostcode . '&delivery_postcode=' . $deliveryPostcode . '&cod=' . $paymentMode . '&weight=' . $weight . '&declared_value=' . $codValue;
 
-            return $this->getRequest($url);
+			$fetchedRateResponse = $this->getRequest($url);
+			if(!$fetchedRateResponse['success']){
+				// Prepare the response array
+				$response = array(
+					'success' => false,  // Assuming the request was successful
+					'message' => $fetchedRateResponse['message'],
+				);
+				return $response;
+			} else {
+				$list_of_couriers = $fetchedRateResponse['result']['data']['available_courier_companies'];
+				$results = [];
+
+				foreach ($list_of_couriers as $courier) {
+					$results[] = [
+						'courier_id' => $courier['courier_company_id'],
+						'courier_name' => $courier['courier_name'],
+						'courier_price' => $courier['rate']
+					];
+				}
+			}
+			
+			// Prepare the response array
+			$response = array(
+				'success' => true,  // Assuming the request was successful
+				'message' => 'Shipping rate fetched successfully',
+				'result' => $results  // The shipping rate result from the API
+			);
+			return $response;
         }
 
-        public function generateLabel($shipmentId) {
-            $url = 'https://apiv2.shiprocket.in/v1/external/courier/generate/label';
-            $body = json_encode(array(
-                "shipment_id" => [$shipmentId],
-            ), true);
-            $result = $this->postRequest($url, $body);
+		// Shipping code start here
+		public function prepareOrderItemsData($orderID){
+			$order = wc_get_order( $orderID );
+			$items = $order->get_items();
+			$orderItems = array();
+			foreach ( $items as $item ) {
+				$product = $item->get_product();
+				$product_name = $item->get_name();
+				$product_quantity = $item->get_quantity();
+				$product_total = $item->get_total();
+				$product_sku = $product->get_sku();
+				if(empty($product_sku)){ $product_sku = mt_rand(100000, 999999); }
+				$orderItem = array(
+					"name" 			=> $product_name,
+					"sku" 			=> $product_sku,
+					"units" 		=> $product_quantity,
+					"selling_price" => $product_total / $product_quantity, //price per item,
+					"discount" 		=> "",
+					"tax" 			=> "",
+					"hsn" 			=> 8240
+				);
+				$orderItems[] = $orderItem;
+			}
+			return $orderItems;
+		}
+		
+		public function prepareShipmentData($orderID){
+
+			$order = wc_get_order( $orderID );
+			$orderDate = date('Y-m-d H:i', strtotime($order->get_date_created()));
+			$getPaymentMode = ESShippingFunction::check_payment_mode($order->get_payment_method_title());
+			if ($getPaymentMode == 'prepaid') {
+				$paymentMode = 'Prepaid';
+			} else {
+				$paymentMode = 'COD';
+			}
+			
+			$orderWeight = ESShippingFunction::get_order_weight($orderID);
+			$weight = $orderWeight['result']/1000; //weight should be in kgs;
+			
+			$productDimensions = ESShippingFunction::get_product_dimensions($orderID);
+
+			$itemData 			= $this->prepareOrderItemsData($orderID);
+
+			$orderData = array(
+							"order_id" 					=> $orderID,
+							"order_date" 				=> $orderDate,
+							"pickup_location" 			=> get_option( 'shiprocket_pickup_location' ),
+							"channel_id" 				=> get_option( 'shiprocket_channel_id' ),
+							"comment" 					=> "",
+							"billing_customer_name"		=> $order->get_billing_first_name(),
+							"billing_last_name"			=> $order->get_billing_last_name(),
+							"billing_address" 			=> $order->get_billing_address_1(),
+							"billing_address_2" 		=> $order->get_billing_address_2(),
+							"billing_city" 				=> $order->get_billing_city(),
+							"billing_pincode" 			=> $order->get_billing_postcode(),
+							"billing_state" 			=> $order->get_billing_state(),
+							"billing_country" 			=> "India",
+							"billing_email" 			=> $order->get_billing_email(),
+							"billing_phone" 			=> $order->get_billing_phone(),
+							"shipping_is_billing" 		=> true,
+							"shipping_customer_name" 	=> "",
+							"shipping_last_name" 		=> "",
+							"shipping_address" 			=> "",
+							"shipping_address_2" 		=> "",
+							"shipping_city" 			=> "",
+							"shipping_pincode" 			=> "",
+							"shipping_country" 			=> "",
+							"shipping_state" 			=> "",
+							"shipping_email" 			=> "",
+							"shipping_phone" 			=> "",
+							"order_items" 				=> $itemData,
+							"payment_method" 			=> $paymentMode,
+							"shipping_charges" 			=> 0,
+							"giftwrap_charges" 			=> 0,
+							"transaction_charges" 		=> 0,
+							"total_discount" 			=> $order->get_discount_total(),
+							"sub_total" 				=> $order->get_total(),
+							"length" 					=> $productDimensions['length'],
+							"breadth" 					=> $productDimensions['width'],
+							"height" 					=> $productDimensions['height'],
+							"weight" 					=> $weight
+						);
+			return json_encode($orderData, true);
+		}
+		
+		public function createShipments($orderID, $courierID) {
+			
+			$url = $this->bookShipmentApiUrl;
+            $shipmentData = $this->prepareShipmentData($orderID);
+			$response = $this->postRequest($url, $shipmentData);
+			if(!$response['success']){
+				// Prepare the response array
+				return array(
+					'success' => false,
+					'message' => $response['message'],
+				);
+			}
+			$result = $response['result'];
+            return $this->handleCreatedShipmentResponse($result, $courierID);
+		}
+
+		public function handleCreatedShipmentResponse($response, $courierID) {
+			
+			$orderID = $response['channel_order_id'];
+			$shipmentID = $response['shipment_id'];
+
+			if(!$shipmentID){
+				return 'Error : '. json_encode($response);
+			}
+			
+			$awbResponce = $this->shiprocketGenerateAWB($shipmentID, $courierID);
+			if(!$awbResponce['success']){
+				// Prepare the response array
+				return array(
+					'success' => false,
+					'message' => $awbResponce['message'],
+				);
+			}
+			$awbData = $awbResponce['result'];
+			if (!(is_array($awbData))) {
+				return array(
+					'success' => false,
+					'message' => $awbData,
+				);
+			}
+			$awb = $awbData['response']['data']['awb_code'];
+		
+			ESCommonFunctions::save_tracking_details_in_meta($orderID, $awb, 'shiprocket');
+			$result = [
+				'success' => true,
+				'message' => 'Order shipped successfully',
+			];
+			return $result;
+		}
+		
+		public function shiprocketGenerateAWB($shipmentID, $courierID){
+			$url   = $this->generateAWBApiUrl;
+			$body = json_encode(array(
+				"shipment_id" => $shipmentID,
+				"courier_id"  => $courierID,
+			), true);
+			$response = $this->postRequest($url, $body);
+			if(!$response['success']){
+				// Prepare the response array
+				return array(
+					'success' => false,
+					'message' => $response['message'],
+				);
+			}
+			$result = $response['result'];
+
+			if(empty($result['awb_assign_status'])){
+				return array(
+					'success' => false,
+					'message' =>'Error : ' . $result['response']['data']['awb_assign_error'],
+				);
+			}
+			return array(
+				'success' => true,
+				'message' => 'Awb generated successfully',
+				'result' => $result
+				);
+		}
+		
+		public function generateLabel($awb) {
+			//get shipment id
+			$url = $this->trackingApiUrl . $awb;
+            $result = $this->getRequest($url);
             if (!$result['success']) {
-                return 'Error: ' . $result['message'];
-            }
-            $response = $result['result'];
-            if (empty($response['label_created'])) {
-                return 'Error: label - ' . json_encode($response);
-            }
-            return stripslashes($response['label_url']);
-        }
-
-        public function generateAWB($shipmentId, $shipBy) {
-            $url = 'https://apiv2.shiprocket.in/v1/external/courier/assign/awb';
-            $body = json_encode(array(
-                "shipment_id" => $shipmentId,
-                "courier_id" => $shipBy,
-            ), true);
-            $result = $this->postRequest($url, $body);
-            if (!$result['success']) {
-                return 'Error: ' . $result['message'];
-            }
-            $response = $result['result'];
-            if (empty($response['awb_assign_status'])) {
-                return 'Error: awb - ' . json_encode($response);
-            }
-            return $response;
-        }
-
-        public function getItems($orderID) {
-            $order = wc_get_order($orderID);
-            $items = $order->get_items();
-            $orderItems = array();
-            foreach ($items as $item) {
-                $product = $item->get_product();
-                $productName = $item->get_name();
-                $productQuantity = $item->get_quantity();
-                $productTotal = $item->get_total();
-                $productSku = $product->get_sku();
-                if (empty($productSku)) { 
-                    $productSku = mt_rand(100000, 999999); 
-                }
-                $orderItems[] = array(
-                    "name" => $productName,
-                    "sku" => $productSku,
-                    "units" => $productQuantity,
-                    "selling_price" => $productTotal / $productQuantity,
-                    "discount" => "",
-                    "tax" => "",
-                    "hsn" => 8240
+                return array(
+                    'success' => false,
+                    'message' => $result['message'],
                 );
             }
-            return $orderItems;
-        }
-
-        public function insertAWBData($orderID, $awbResponse, $labelUrl) {
-            $order = wc_get_order($orderID);
-            $orderWeight = $this->getOrderWeight($orderID);
-
-            $awbData = new ES_db_data_format();
-            $awbData->order_number = $orderID;
-            $awbData->order_status = $order->get_status();
-            $awbData->awb = $awbResponse['awb_code'];
-            $awbData->awb_status = $awbResponse['status'];
-            $awbData->awb_courier_company_id = $awbResponse['courier_id'];
-            $awbData->awb_label_url = $labelUrl;
-            $awbData->awb_created_at = current_time('mysql');
-            $awbData->awb_updated_at = current_time('mysql');
-            $awbData->awb_weight = $orderWeight;
-
-            $awbData->save();
-
-            return $awbData;
-        }
-
-        private function checkPaymentMode($paymentMethodTitle, $defaultMode) {
-            if ($paymentMethodTitle === 'Cash on Delivery') {
-                return 'SR0';
+            $response = $result['result'];
+            if (empty($response['tracking_data']['track_status'])) {
+                return array(
+                    'success' => false,
+                    'message' => $response['tracking_data']['error'],
+                );
             }
-            return $defaultMode;
-        }
-
-        private function getOrderWeight($orderID) {
-            $order = wc_get_order($orderID);
-            $items = $order->get_items();
-            $weight = 0;
-            foreach ($items as $item) {
-                $product = $item->get_product();
-                $productWeight = $product->get_weight();
-                $quantity = $item->get_quantity();
-                $weight += $productWeight * $quantity;
-            }
-            return $weight;
-        }
+			$shipmentID = $response['tracking_data']['shipment_track'][0]['shipment_id'];
+			
+			// Get label
+			$url   = $this->generateLabelApiUrl;
+			$body = json_encode(array(
+				"shipment_id" => [$shipmentID],
+			), true);
+			$response = $this->postRequest($url, $body);
+			if(!$response['success']){
+				// Prepare the response array
+				return array(
+					'success' => false,
+					'message' => $response['message'],
+				);
+			}
+			$result = $response['result'];
+			if(empty($result['label_created'])){
+				return array(
+					'success' => false,
+					'message' =>'Error : ' . json_encode($result),
+				);
+			}
+			return array(
+				'success' => true,
+				'message' => 'Label Generated successfully',
+				'result' => $result['label_url']
+			);
+		}
+		
+		public function shiprocketWalletBallence() {
+			$url   = $this->walletBalanceApiUrl;
+			$response = $this->getRequest($url);
+			if(!$response['success']){
+				// Prepare the response array
+				return array(
+					'success' => false,
+					'message' => $response['message'],
+				);
+			} else {
+				return array(
+					'success' => true,
+					'message' => 'Get wallelt balance successfully',
+					'result'  => $response['result']['data']['balance_amount']
+				);
+			}
+		}
     }
 }
 
@@ -334,7 +514,7 @@ if (!class_exists('ShiprocketSettings')) {
         }
 
         public function register_menu_page() {
-            add_submenu_page(EASYSHIP_MAIN_URL, 'Shiprocket settings', 'Shiprocket API', 'manage_options', 'easyship-shiprocket', [$this, 'shiprocket_settings_page']);
+            add_submenu_page(EASYSHIP_MENU_SLUG, 'Shiprocket settings', 'Shiprocket API', 'manage_options', 'easyship-shiprocket', [$this, 'shiprocket_settings_page']);
         }
 
         public function shiprocket_settings_page() {

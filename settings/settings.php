@@ -14,7 +14,7 @@ if (!class_exists('EasyShipSetting')) {
 
         // Add settings link on plugin page
         public function settings_page_link($links) {
-            $settings_link = '<a href="admin.php?page=' . EASYSHIP_MAIN_URL . '">Settings</a>';
+            $settings_link = '<a href="' . EASYSHIP_MAIN_URL . '">Settings</a>';
             array_unshift($links, $settings_link);
             return $links;
         }
@@ -31,7 +31,7 @@ if (!class_exists('EasyShipSetting')) {
         }
 
         public function register_menu_page() {
-            add_menu_page('EasyShip Dashboard', 'EasyShip', 'manage_options', EASYSHIP_MAIN_URL, [$this, 'easyship_dashboard_page'], 'dashicons-airplane', 6);
+            add_menu_page('EasyShip Dashboard', 'EasyShip', 'manage_options', EASYSHIP_MENU_SLUG, [$this, 'easyship_dashboard_page'], 'dashicons-airplane', 6);
         }
 
         public function easyship_dashboard_page() {

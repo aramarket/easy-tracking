@@ -31,7 +31,7 @@
                             </td> 
                             <td>
                                 <a class="es-anchor" href="<?php echo get_permalink($item->get_product_id()) ?>" target="_blank">
-                                    <?php echo (new ESTrackingFunction())->make_string_ellipsis($item->get_name(), 4); ?>
+                                    <?php echo ESCommonFunctions::make_string_ellipsis($item->get_name(), 4); ?>
                                 </a>                            
                             </td>
                             <td><?php echo $item->get_quantity().'x₹'.$item->get_total()/$item->get_quantity(); ?></td>

@@ -7,12 +7,24 @@ if (!class_exists('DelhiveryAPI')) {
         
         private $token;
         private $trackingUrl;
-        private $trackingApi;
+        private $trackingApiUrl;
+		private $getRateApiUrl;
+		private $genrateAwbApiUrl;
+		private $bookShipmentApiUrl;
+		private $generatedLabelApiUrl;
 
         public function __construct() {
             $this->token = get_option('delhivery_token');
+			//	Tracking
             $this->trackingUrl = 'https://www.delhivery.com/track/package/';
-            $this->trackingApi = 'https://track.delhivery.com/api/v1/packages/json/?waybill=';
+            $this->trackingApiUrl = 'https://track.delhivery.com/api/v1/packages/json/?waybill=';
+			//	Get rate
+			$this->getRateApiUrl  = 'https://track.delhivery.com/api/kinko/v1/invoice/charges/.json?md=E&ss=Delivered&';
+			//	Booking shipment
+			$this->genrateAwbApiUrl  = 'https://track.delhivery.com/waybill/api/bulk/json/?count=';
+			$this->bookShipmentApiUrl  = 'https://track.delhivery.com/api/cmu/create.json';
+			$this->generatedLabelApiUrl  = 'https://track.delhivery.com/api/p/packing_slip?pdf=true&wbns=';
+			
         }
 
         // Start Tracking code
@@ -58,7 +70,7 @@ if (!class_exists('DelhiveryAPI')) {
 
         public function getTrackingData($awb) {
             // $awb = $this->getAWBFromOrderId($orderID);
-            $url = $this->trackingApi . $awb;
+            $url = $this->trackingApiUrl . $awb;
             $result = $this->getRequest($url);
             if(!$result['success']){
                 return array(
@@ -108,103 +120,136 @@ if (!class_exists('DelhiveryAPI')) {
         }
         // End of Tracking code
 
-        // This Shipping code
-        public function fetchAWBs($count)
-        {
-            $url = 'https://track.delhivery.com/waybill/api/bulk/json/?count=' . $count;
-            return $this->getRequest($url);
-        }
+        // Start code for show popup rate list
+		public function getShippingRate($order_ID, $orderWeight) {
+			$order = wc_get_order($order_ID);
+			$getPaymentMode = ESShippingFunction::check_payment_mode($order->get_payment_method_title());
 
-        public function generateLabel($awb)
-        {
-            $url = 'https://track.delhivery.com/api/p/packing_slip?pdf=true&wbns=' . $awb;
-            $response = $this->getRequest($url);
-            $label = json_decode($response, true);
-            
-            if (!$label['packages_found']) {
-                return 'Error: Wrong awb - ' . $awb;
-            }
-            
-            return $label['packages'][0]['pdf_download_link'];
-        }
+			if ($getPaymentMode == 'prepaid') {
+				$paymentMode = 'Pre-paid';
+			} else {
+				$paymentMode = 'COD';
+			}
 
-        public function getShippingRate($orderID, $orderWeight)
-        {
-            $order = wc_get_order($orderID);
-            $paymentMode = $this->checkPaymentMode($order->get_payment_method_title(), 'DL');
-            $basePin = WC()->countries->get_base_postcode();
-            $destinationPin = $order->get_billing_postcode();
-            $codValue = $order->get_total();
+			$basePin = WC()->countries->get_base_postcode();
+			$destinationPin = $order->get_billing_postcode();
+			$codValue = $order->get_total();
 
-            $url = 'https://track.delhivery.com/api/kinko/v1/invoice/charges/.json?md=E&ss=Delivered&d_pin=' . $destinationPin . '&o_pin=' . $basePin . '&cgm=' . $orderWeight . '&pt=' . $paymentMode . '&cod=' . $codValue;
+			$url = $this->getRateApiUrl.'d_pin='.$destinationPin.'&o_pin='.$basePin.'&cgm='.$orderWeight . '&pt=' . $paymentMode . '&cod=' . $codValue;
 
-            return $this->getRequest($url);
-        }
+			$response = $this->getRequest($url);
+			if(!$response['success']){
+				// Prepare the response array
+				return array(
+					'success' => false,  // Assuming the request was successful
+					'message' => $response['message'],
+				);
+			} else {
+				$results[] = [
+					'courier_id' => '1', //optional
+					'courier_name' => 'Delhivery',
+					'courier_price' => $response['result'][0]['total_amount']
+				];
+			}
+			
+			// Prepare the response array
+			return array(
+				'success' => true,  // Assuming the request was successful
+				'message' => 'Shipping rate fetched successfully',
+				'result' => $results  // The shipping rate result from the API
+			);
+		}
+		// End code for show popup rate list
+		
+		//Start code for shipping
+		private function genrateAwbs($count) {
+			$url = $this->genrateAwbApiUrl . $count;
+			$response = $this->getRequest($url);
 
-        private function getOrderItems($orderID)
-        {
-            $order = wc_get_order($orderID);
-            $items = $order->get_items();
-            $orderTitle = '';
+			if (!$response['success']) {
+				// Prepare the response array for failure case
+				return array(
+					'success' => false,
+					'message' => 'Error - ' . $response['message'],
+				);
+			} 
 
-            foreach ($items as $item) {
-                $orderTitle .= $item->get_product()->get_name() . ' ';
-            }
+			// Prepare the response array for success case
+			return array(
+				'success' => true,
+				'message' => 'Generated AWBs successfully',
+				'result' => $response['result']
+			);
+		}
+		
+		private function productTitlesCombined($order) {
+			$items = $order->get_items();
+			$orderTitle = '';
+			$counter = 0;
+			
+			foreach ($items as $item) {
+				$counter ++;
+				$product = $item->get_product();
+				$productName = ESCommonFunctions::replaceSpecialChars( $product->get_name());
+				$quantity = $item->get_quantity();
+				$serial = $product->get_sku(); // Assuming SKU is used as the serial number
+				 // - | ()  these are tested
+				$orderTitle .= "Item {$counter}: (Qnty x {$quantity}) {$productName} || ";
+			}
 
-            return $this->replaceSpecialChars($orderTitle, '');
-        }
+			return $orderTitle;
+		}
+		
+		public function prepareShipmentData($orderIDs) {
+			$awbResponse = $this->genrateAwbs(count($orderIDs));
 
-        public function insertAWBData($orderID, $awb)
-        {
-            $order = wc_get_order($orderID);
-            $orderWeight = $this->getOrderWeight($orderID);
-
-            $awbData = new ES_db_data_format();
-            $awbData->order_number = $orderID;
-            $awbData->order_price = $order->get_total();
-            $awbData->order_weight = $orderWeight;
-            $awbData->courier = 'Delhivery';
-            $awbData->courier_id = 'NA';
-            $awbData->awb = $awb;
-            $awbData->tp_company = 'DL';
-            $awbData->label = 'NA';
-
-            return es_insert_order_data_db($awbData);
-        }
-
-        private function prepareShipmentData($orderIDs)
-        {
-            $awbString = $this->fetchAWBs(count($orderIDs));
-            $awbs = array_map(function ($value) {
-                return str_replace('"', '', $value);
-            }, explode(",", $awbString));
-            
+			if (!$awbResponse['success']) {
+				return array(
+					'success' => false,
+					'message' => $awbResponse['message'],
+				);
+			}
+			$awbString = $awbResponse['result'];
+            $awbs = array_map(function ($value) {return str_replace('"', '', $value);}, explode(",", $awbString));
             $awbIndex = 0;
             $shipmentData = [
                 "shipments" => [],
                 "pickup_location" => ["name" => get_option('delhivery_pickup_location')]
             ];
-
+			
             foreach ($orderIDs as $orderID) {
                 $awb = $awbs[$awbIndex++];
                 $order = wc_get_order($orderID);
                 $orderDate = date('Y-m-d H:i', strtotime($order->get_date_created()));
-                $paymentMode = $this->checkPaymentMode($order->get_payment_method_title(), 'DL');
-                $itemList = $this->getOrderItems($orderID);
-                $orderWeight = $this->getOrderWeight($orderID);
-                $productDimensions = $this->getProductDimensions($orderID);
-
+				
+				$getPaymentMode = ESShippingFunction::check_payment_mode($order->get_payment_method_title());
+				if ($getPaymentMode == 'prepaid') {
+					$paymentMode = 'Pre-paid';
+				} else {
+					$paymentMode = 'COD';
+				}
+                $productTitlesCombined = $this->productTitlesCombined($order);
+				$order_weight_response = ESShippingFunction::get_order_weight($orderID);
+				$orderWeight = $order_weight_response['result'];
+                $productDimensions = ESShippingFunction::get_product_dimensions($orderID);
+				$phoneResponce = ESCommonFunctions::extractPhoneNumber($order->get_billing_phone());
+				if($phoneResponce['success']) {
+					$phone = $phoneResponce['result'];
+				} else{
+					$phone = 0000000000;
+				}
                 $shipmentData["shipments"][] = [
                     "name" => $order->get_billing_first_name() . ' ' . $order->get_billing_last_name(),
-                    "add" => $this->replaceSpecialChars($order->get_billing_address_1()) . ' ' . $this->replaceSpecialChars($order->get_billing_address_2()),
+                    "add" => ESCommonFunctions::replaceSpecialChars($order->get_billing_address_1()) 
+							. ' ' . ESCommonFunctions::replaceSpecialChars($order->get_billing_address_2()),
                     "pin" => $order->get_billing_postcode(),
                     "city" => $order->get_billing_city(),
                     "state" => $order->get_billing_state(),
                     "country" => "India",
-                    "phone" => $this->extractPhoneNumber($order->get_billing_phone()),
+                    "phone" => $phone,
                     "order" => $orderID,
                     "payment_mode" => $paymentMode,
-                    "products_desc" => $itemList,
+                    "products_desc" => $productTitlesCombined,
                     "cod_amount" => $order->get_total(),
                     "order_date" => $orderDate,
                     "total_amount" => $order->get_total(),
@@ -222,12 +267,11 @@ if (!class_exists('DelhiveryAPI')) {
 
             return json_encode($shipmentData, true);
         }
-
-        public function createShipments($orderIDs)
-        {
-            $url = 'https://track.delhivery.com/api/cmu/create.json';
+		
+        public function createShipments($orderIDs) {
+            $url = $this->bookShipmentApiUrl;
             $shipmentData = $this->prepareShipmentData($orderIDs);
-
+			
             $headers = array(
                 'Content-Type' => 'application/json',
                 'Accept' => 'application/json',
@@ -239,123 +283,101 @@ if (!class_exists('DelhiveryAPI')) {
                 'body' => 'format=json&data=' . $shipmentData,
                 'timeout' => count($orderIDs) * 5
             ));
-
+			
+			$body = wp_remote_retrieve_body($response);
+            $status_code = wp_remote_retrieve_response_code($response);
+        
             if (is_wp_error($response)) {
-                return 'Error: While Creating Shipment API-' . $response->get_error_message();
+                return array(
+                    'success' => false,
+                    'message' => 'Error: ' . $response->get_error_message(),
+                );
+            }
+        
+            if ($status_code !== 200) {
+                return array(
+                    'success' => false,
+                    'message' => 'Error: Received status code ' . $status_code . ' - ' . $body,
+                );
+            }
+        
+            $decoded_body = json_decode($body, true);
+            if ($decoded_body === null) {
+                return array(
+                    'success' => false,
+                    'message' => 'Error: Invalid JSON response',
+                );
             }
 
-            return $this->handleCreatedShipmentResponse(wp_remote_retrieve_body($response));
+            return $this->handleCreatedShipmentResponse($decoded_body);
         }
 
-        private function handleCreatedShipmentResponse($response)
-        {
-            $responseJson = json_decode($response, true);
-            if (!isset($responseJson['package_count'])) {
-                return 'Error: ' . json_encode($responseJson);
-            }
 
+        private function handleCreatedShipmentResponse($response) {
             $shipErrors = [];
             $counter = 0;
-
-            foreach ($responseJson['packages'] as $package) {
+			if (!isset($response['package_count'])) {
+				return [
+					'success' => false,
+					'message' => 'Error: ' . json_encode($response),
+					'result'  => []
+				];
+            }
+			
+            foreach ($response['packages'] as $package) {
                 $orderID = $package['refnum'];
                 $awb = $package['waybill'];
-                $order = wc_get_order($orderID);
 
                 if ($package['status'] == "Success") {
-                    $dbResponse = $this->insertAWBData($orderID, $awb);
-                    if ($dbResponse == 'success') {
-                        $counter++;
-                        $orderMessage = 'https://aramarket.in/tracking/?order-id=' . $orderID;
-                        $directMessage = 'https://www.delhivery.com/track/package/' . $awb;
-                        $selectedStatusWC = get_option('after_ship_status');
-                        $selectedStatus = str_replace('wc-', '', $selectedStatusWC);
-                        $order->update_status($selectedStatus, 'EasyShip Change -');
-                        $order->add_order_note('Tracking Link - <a target="_blank" href="' . $orderMessage . '">' . $orderMessage . '</a>', true);
-                        $order->add_order_note('Direct Link - <a target="_blank" href="' . $directMessage . '">' . $directMessage . '</a>');
-                        $order->save();
-                        $shipErrors[] = $orderID . ' - shipped';
-                    } else {
-                        $shipErrors[] = $orderID . ' - Error db - ' . $dbResponse;
-                    }
+					$counter++;
+					ESCommonFunctions::save_tracking_details_in_meta($orderID, $awb, 'delhivery');
                 } else {
-                    $shipErrors[] = $orderID . ' - Error - ' . json_encode($package['remarks']);
+                    $shipErrors[$orderID] = ' Error - ' . json_encode($package['remarks']);
                 }
             }
 
-            if (count($responseJson['packages']) == 1) {
-                return json_encode($shipErrors);
-            } else {
-                $totalSuccess = "Shipped " . $counter . " out of " . $responseJson['package_count'];
-                array_unshift($shipErrors, $totalSuccess);
-                return $shipErrors;
+// 			$totalSuccess = "Shipped " . $counter . " out of " . $response['package_count'] . "\n \n";
+// 			array_unshift($shipErrors, $totalSuccess);
+			
+			if(empty($shipErrors)) {
+				$result = [
+					'success' => true,
+					'message' => 'Order shipped successfully',
+				];
+			} else {
+				$result = [
+					'success' => false,
+					'message' => $shipErrors,
+				];
+			}
+
+			return $result;
+        }
+		
+        public function generateLabel($awb) {
+            $url = $this->generatedLabelApiUrl . $awb;
+            $response = $this->getRequest($url);
+			if (!$response['success']) {
+				// Prepare the response array for failure case
+				return array(
+					'success' => false,
+					'message' => 'Error - ' . $response['message'],
+				);
+			} 
+
+			if (!$response['result']['packages_found']) {
+				return array(
+					'success' => false,
+					'message' => 'Error: Wrong awb - ' . $awb,
+				);
             }
-        }
-
-        private function checkPaymentMode($paymentMethodTitle, $type)
-        {
-            $paymentMode = 'Prepaid';
-
-            if ($type == 'DL') {
-                $delhiveryCod = get_option('delhivery_cod');
-
-                foreach ($delhiveryCod as $cod) {
-                    if (stripos($paymentMethodTitle, $cod) !== false) {
-                        $paymentMode = 'COD';
-                        break;
-                    }
-                }
-            }
-
-            return $paymentMode;
-        }
-
-        private function getAWBNumber($orderID)
-        {
-            global $wpdb;
-            $awb = $wpdb->get_var("SELECT awb FROM wp_awb_tracking WHERE order_number = $orderID");
-
-            return $awb ?: null;
-        }
-
-        private function getProductDimensions($orderID)
-        {
-            $order = wc_get_order($orderID);
-            $dimensions = ['length' => 0, 'width' => 0, 'height' => 0];
-
-            foreach ($order->get_items() as $item) {
-                $product = $item->get_product();
-
-                $dimensions['length'] += $product->get_length();
-                $dimensions['width'] += $product->get_width();
-                $dimensions['height'] += $product->get_height();
-            }
-
-            return $dimensions;
-        }
-
-        private function getOrderWeight($orderID)
-        {
-            $order = wc_get_order($orderID);
-            $totalWeight = 0;
-
-            foreach ($order->get_items() as $item) {
-                $product = $item->get_product();
-                $totalWeight += $product->get_weight() * $item->get_quantity();
-            }
-
-            return $totalWeight;
-        }
-
-        private function replaceSpecialChars($str, $replace = ' ')
-        {
-            return preg_replace('/[^A-Za-z0-9]/', $replace, $str);
-        }
-
-        private function extractPhoneNumber($phone)
-        {
-            preg_match('/\d{10}/', $phone, $matches);
-            return $matches[0] ?? null;
+			
+			// Prepare the response array for success case
+			return array(
+				'success' => true,
+				'message' => 'Label Generated successfully',
+				'result' => $response['result']['packages'][0]['pdf_download_link']
+			);
         }
     }
 }
@@ -375,7 +397,7 @@ if (!class_exists('DelhiverySettings')) {
         }
 
         public function register_menu_page() {
-            add_submenu_page(EASYSHIP_MAIN_URL, 'Delhivery settings', 'Delhivery API', 'manage_options', 'delhivery-nimbuspost', [$this, 'delhivery_settings_page']);
+            add_submenu_page(EASYSHIP_MENU_SLUG, 'Delhivery settings', 'Delhivery API', 'manage_options', 'delhivery-nimbuspost', [$this, 'delhivery_settings_page']);
         }
 
         public function delhivery_settings_page() {
